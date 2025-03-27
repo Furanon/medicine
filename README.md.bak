@@ -1,4 +1,4 @@
-#  Fire Circus Course Platform with Image Processing
+# Medical Course Platform with Image Processing
 
 ## Project Overview
 This project is a Cloudflare Workers-based platform for managing medical courses with integrated payment processing and image handling capabilities.

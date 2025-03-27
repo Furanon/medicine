@@ -1,0 +1,217 @@
+.tooltip {
+  position: fixed;
+  z-index: 9999;
+  background-color: #fff;
+  color: #333;
+  border-radius: 4px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+  max-width: 250px;
+  width: max-content;
+  font-size: 14px;
+  line-height: 1.4;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.tooltip-content {
+  position: relative;
+  word-wrap: break-word;
+}
+
+/* Arrow styles */
+.tooltip-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-color: #fff;
+  transform: rotate(45deg);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.tooltip-arrow-top {
+  bottom: -6px;
+  left: calc(50% - 5px);
+  border-top: none;
+  border-left: none;
+}
+
+.tooltip-arrow-bottom {
+  top: -6px;
+  left: calc(50% - 5px);
+  border-bottom: none;
+  border-right: none;
+}
+
+.tooltip-arrow-left {
+  right: -6px;
+  top: calc(50% - 5px);
+  border-top: none;
+  border-right: none;
+}
+
+.tooltip-arrow-right {
+  left: -6px;
+  top: calc(50% - 5px);
+  border-bottom: none;
+  border-left: none;
+}
+
+/* Animation types */
+.tooltip-fade {
+  animation: tooltip-fade-in 0.2s ease-in forwards;
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tooltip-scale {
+  animation: tooltip-scale-in 0.2s ease-in forwards;
+  transform-origin: center;
+}
+
+@keyframes tooltip-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tooltip-slide {
+  animation: tooltip-slide-in 0.2s ease-in forwards;
+}
+
+.tooltip-top.tooltip-slide {
+  transform-origin: bottom center;
+}
+
+.tooltip-bottom.tooltip-slide {
+  transform-origin: top center;
+}
+
+.tooltip-left.tooltip-slide {
+  transform-origin: right center;
+}
+
+.tooltip-right.tooltip-slide {
+  transform-origin: left center;
+}
+
+@keyframes tooltip-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Position adjustments for specific positions */
+.tooltip-top.tooltip-slide {
+  animation-name: tooltip-slide-in-top;
+}
+
+.tooltip-bottom.tooltip-slide {
+  animation-name: tooltip-slide-in-bottom;
+}
+
+.tooltip-left.tooltip-slide {
+  animation-name: tooltip-slide-in-left;
+}
+
+.tooltip-right.tooltip-slide {
+  animation-name: tooltip-slide-in-right;
+}
+
+@keyframes tooltip-slide-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tooltip-slide-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tooltip-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tooltip-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Custom tooltip themes can be added below */
+.tooltip-dark {
+  background-color: #333;
+  color: #fff;
+}
+
+.tooltip-dark .tooltip-arrow {
+  background-color: #333;
+}
+
+.tooltip-error {
+  background-color: #f44336;
+  color: white;
+}
+
+.tooltip-error .tooltip-arrow {
+  background-color: #f44336;
+}
+
+.tooltip-success {
+  background-color: #4caf50;
+  color: white;
+}
+
+.tooltip-success .tooltip-arrow {
+  background-color: #4caf50;
+}
+
+/* Tooltip trigger */
+.tooltip-trigger {
+  display: inline-flex;
+  position: relative;
+}
+
