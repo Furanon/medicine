@@ -1,3 +1,250 @@
+const { initStripe, processPayment, handleStripeWebhook } = require('./stripe');
+import { handleImageRoutes } from './routes/images';
+import { Router } from './router';  // Assuming you have a router module
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'http://localhost:5173',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+function handleOptions(request) {
+  if (request.headers.get('Origin') !== null &&
+      request.headers.get('Access-Control-Request-Method') !== null &&
+      request.headers.get('Access-Control-Request-Headers') !== null) {
+    return new Response(null, {
+      headers: corsHeaders,
+      status: 204,
+    });
+  } else {
+    return new Response(null, {
+      headers: {
+        Allow: 'GET, HEAD, POST, PUT, OPTIONS',
+      },
+    });
+  }
+}
+
+function wrapResponse(response) {
+  const headers = new Headers(response.headers);
+  Object.keys(corsHeaders).forEach(key => {
+    headers.set(key, corsHeaders[key]);
+  });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+    },
+    status,
+  });
+}
+
+const router = new Router();  // Initialize your router
+
+// Add your router configurations here
+// router.get('/api/someEndpoint', handleSomeEndpoint);
+
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method === 'OPTIONS') {
+      return handleOptions(request);
+    }
+
+    try {
+      const url = new URL(request.url);
+      
+      // Health check endpoint
+      if (url.pathname === '/api/health') {
+        return jsonResponse({
+          status: 'healthy',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Events endpoints
+      if (url.pathname === '/api/events') {
+        if (request.method === 'GET') {
+          // TODO: Implement event fetching from D1
+          return jsonResponse([
+            {
+              id: 1,
+              title: 'Test Event',
+              start: new Date().toISOString(),
+              end: new Date(Date.now() + 3600000).toISOString(),
+            }
+          ]);
+        }
+      }
+
+      // Handle image routes
+      const imageResponse = await handleImageRoutes(request, env);
+      if (imageResponse) {
+        return wrapResponse(imageResponse);
+      }
+
+      // Handle all other routes with the router
+      const response = await router.handle(request, env, ctx);
+      return wrapResponse(response);
+
+    } catch (error) {
+      console.error("Error processing request:", error);
+      return jsonResponse({
+        success: false,
+        error: error.message || "An unexpected error occurred",
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      }, error.status || 500);
+    }
+  }
+};
+
+const { initStripe, processPayment, handleStripeWebhook } = require('./stripe');
+import { handleImageRoutes } from './routes/images';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'http://localhost:5173',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+function handleOptions(request) {
+  if (request.headers.get('Origin') !== null &&
+      request.headers.get('Access-Control-Request-Method') !== null &&
+      request.headers.get('Access-Control-Request-Headers') !== null) {
+    return new Response(null, {
+      headers: corsHeaders,
+      status: 204,
+    });
+  } else {
+    return new Response(null, {
+      headers: {
+        Allow: 'GET, HEAD, POST, PUT, OPTIONS',
+      },
+    });
+  }
+}
+
+function wrapResponse(response) {
+  const headers = new Headers(response.headers);
+  Object.keys(corsHeaders).forEach(key => {
+    headers.set(key, corsHeaders[key]);
+  });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+// Helper function to create JSON response
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+    },
+    status,
+  });
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    // Handle OPTIONS requests for CORS preflight
+    if (request.method === 'OPTIONS') {
+      return handleOptions(request);
+    }
+
+    try {
+      const url = new URL(request.url);
+      
+      // Health check endpoint
+      if (url.pathname === '/api/health') {
+        return jsonResponse({
+          status: 'healthy',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Events endpoints
+      if (url.pathname === '/api/events') {
+        if (request.method === 'GET') {
+          // TODO: Implement event fetching from D1
+          return jsonResponse([
+            {
+              id: 1,
+              title: 'Test Event',
+              start: new Date().toISOString(),
+              end: new Date(Date.now() + 3600000).toISOString(),
+            }
+          ]);
+        }
+      }
+
+      // Try handling image routes
+      const imageResponse = await handleImageRoutes(request, env);
+      if (imageResponse) {
+        return wrapResponse(imageResponse);
+      }
+
+      // Handle the request with our router
+      const response = await router.handle(request, env, ctx);
+      return wrapResponse(response);
+
+    } catch (error) {
+      console.error("Error processing request:", error);
+      return jsonResponse({
+        success: false,
+        error: error.message || "An unexpected error occurred",
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      }, error.status || 500);
+    }
+  }
+};
+
+// Middleware to handle CORS
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'http://localhost:5173',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+// Helper function to handle CORS preflight requests
+function handleOptions(request) {
+  if (request.headers.get('Origin') !== null &&
+      request.headers.get('Access-Control-Request-Method') !== null &&
+      request.headers.get('Access-Control-Request-Headers') !== null) {
+    return new Response(null, {
+      headers: corsHeaders
+    });
+  } else {
+    return new Response(null, {
+      headers: {
+        Allow: 'GET, POST, PUT, DELETE, OPTIONS',
+      },
+    });
+  }
+}
+
+// Helper function to wrap responses with CORS headers
+function wrapResponse(response) {
+  const headers = new Headers(response.headers);
+  Object.keys(corsHeaders).forEach(key => {
+    headers.set(key, corsHeaders[key]);
+  });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 /**
  * Fire Circus API - A RESTful API for managing courses, sessions, users, and bookings
  * 
@@ -6,15 +253,8 @@
  * - Run `npm run deploy` to publish your worker
  *
  */
-
 const { initStripe, processPayment, handleStripeWebhook } = require('./stripe');
 import { handleImageRoutes } from './routes/images';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
 // Helper function to create JSON response
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -1243,54 +1483,58 @@ router.post('/api/webhooks/stripe', async (request, env, ctx) => {
 });
 
 // Export the fetch handler for the Worker
-
 export default {
   async fetch(request, env, ctx) {
-    // Use the globally defined CORS headers
-
     // Handle OPTIONS requests for CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: corsHeaders,
-        status: 204,
-      })
+      return handleOptions(request);
     }
 
     try {
-      // Try handling image routes first
+      const url = new URL(request.url);
+      
+      // Health check endpoint
+      if (url.pathname === '/api/health') {
+        return wrapResponse(new Response(JSON.stringify({
+          status: 'healthy',
+          timestamp: new Date().toISOString()
+        }), {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }));
+      }
+
+      // Events endpoints
+      if (url.pathname === '/api/events') {
+        if (request.method === 'GET') {
+          // TODO: Implement event fetching from D1
+          return wrapResponse(new Response(JSON.stringify([
+            // Sample event data
+            {
+              id: 1,
+              title: 'Test Event',
+              start: new Date().toISOString(),
+              end: new Date(Date.now() + 3600000).toISOString(),
+            }
+          ]), {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }));
+        }
+      }
+
+      // Try handling image routes
       const imageResponse = await handleImageRoutes(request, env);
       if (imageResponse) {
-        // Add CORS headers to the image response
-        const headers = new Headers(imageResponse.headers);
-        Object.entries(corsHeaders).forEach(([key, value]) => {
-          headers.set(key, value);
-        });
-        return new Response(imageResponse.body, {
-          status: imageResponse.status,
-          headers
-        });
+        return wrapResponse(imageResponse);
       }
 
       // Handle the request with our router
       const response = await router.handle(request, env, ctx);
-      
-      // Add CORS headers to the response (using the globally defined corsHeaders)
-      
-      // Create a new response with CORS headers
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: {
-          ...Object.fromEntries(response.headers),
-          ...corsHeaders,
-        },
-      })
-    } catch (error) {
-      // Log the error for debugging
-      console.error("Error processing request:", error);
-      
-      // Return an appropriate error response with CORS headers
-      return new Response(
+      return wrapResponse(response);
+    }      return new Response(
         JSON.stringify({
           success: false,
           error: error.message || "An unexpected error occurred",
@@ -1300,13 +1544,5 @@ export default {
           status: error.status || 500,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Max-Age": "86400",
           },
         }
-      );
-    }
-  }
-};
