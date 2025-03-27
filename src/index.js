@@ -1235,15 +1235,47 @@ router.delete('/api/bookings/:id', async (request, env, ctx) => {
 
 // Get all variables
 router.get('/api/variables', async (request, env, ctx) => {
+  console.log('[GET /api/variables] Request received');
   try {
+    // Validate DB connection
+    if (!env.DB) {
+      console.error('[GET /api/variables] Database connection not available');
+      return errorResponse('Database connection not available', 500);
+    }
+
+    console.log('[GET /api/variables] Preparing to execute database query');
+    // Execute query with timing
+    const startTime = performance.now();
     const { results } = await env.DB.prepare(
       'SELECT * FROM Variables ORDER BY name'
     ).all();
+    const queryTime = performance.now() - startTime;
+    console.log(`[GET /api/variables] Database query completed in ${queryTime.toFixed(2)}ms, found ${results ? results.length : 0} variables`);
+    
+    // Check for empty results (not an error but worth logging)
+    if (!results || results.length === 0) {
+      console.log('[GET /api/variables] No variables found in database');
+    }
     
     return jsonResponse({ variables: results })
   } catch (error) {
-    console.error('Error fetching variables:', error);
-    return errorResponse('Failed to fetch variables', 500);
+    // Log detailed error information
+    console.error('[GET /api/variables] Error fetching variables:', error);
+    console.error('[GET /api/variables] Error stack:', error.stack);
+    
+    // Determine specific error message based on error type
+    let errorMessage = 'Failed to fetch variables';
+    let statusCode = 500;
+    
+    if (error.message && error.message.includes('no such table')) {
+      errorMessage = 'Variables table does not exist in the database';
+      console.error(`[GET /api/variables] Database error: ${errorMessage}`);
+    } else if (error.message && error.message.includes('syntax error')) {
+      errorMessage = 'SQL syntax error when querying variables';
+      console.error(`[GET /api/variables] SQL error: ${errorMessage}`);
+    }
+    
+    return errorResponse(errorMessage, statusCode);
   }
 })
 
@@ -1269,12 +1301,15 @@ router.get('/api/variables/:id', async (request, env, ctx) => {
 
 // Create a new variable
 router.post('/api/variables', async (request, env, ctx) => {
+  console.log('[POST /api/variables] Request received');
   try {
     // Parse JSON request body
     let data;
     try {
       data = await request.json();
+      console.log(`[POST /api/variables] Request body parsed: ${JSON.stringify(data)}`);
     } catch (error) {
+      console.error('[POST /api/variables] Invalid JSON in request body:', error);
       return errorResponse('Invalid JSON in request body', 400);
     }
 
@@ -1282,35 +1317,98 @@ router.post('/api/variables', async (request, env, ctx) => {
     const requiredFields = ['name', 'value'];
     const missingFields = validateRequiredFields(data, requiredFields);
     if (missingFields) {
+      console.error(`[POST /api/variables] Validation failed: ${missingFields}`);
       return errorResponse(missingFields, 400);
     }
+    
+    console.log(`[POST /api/variables] Input validation passed for variable: ${data.name}`);
 
+    // Validate DB connection
+    if (!env.DB) {
+      console.error('[POST /api/variables] Database connection not available');
+      return errorResponse('Database connection not available', 500);
+    }
+
+    console.log(`[POST /api/variables] Checking if variable '${data.name}' already exists`);
     // Check if variable with same name already exists
+    const startCheckTime = performance.now();
     const existingVariable = await env.DB.prepare(
       'SELECT * FROM Variables WHERE name = ?'
     ).bind(data.name).first();
+    const checkQueryTime = performance.now() - startCheckTime;
+    console.log(`[POST /api/variables] Existence check completed in ${checkQueryTime.toFixed(2)}ms`);
 
     if (existingVariable) {
+      console.error(`[POST /api/variables] Variable with name '${data.name}' already exists`);
       return errorResponse('A variable with this name already exists', 400);
     }
 
+    console.log(`[POST /api/variables] Preparing to insert new variable: ${data.name}`);
     // Insert new variable
-    await env.DB.prepare(
-      'INSERT INTO Variables (name, value, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
-    ).bind(
-      data.name,
-      data.value
-    ).run();
+    const startInsertTime = performance.now();
+    try {
+      await env.DB.prepare(
+        'INSERT INTO Variables (name, value, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+      ).bind(
+        data.name,
+        data.value
+      ).run();
+      const insertQueryTime = performance.now() - startInsertTime;
+      console.log(`[POST /api/variables] Insert completed in ${insertQueryTime.toFixed(2)}ms`);
+    } catch (dbError) {
+      console.error('[POST /api/variables] Database insertion error:', dbError);
+      console.error('[POST /api/variables] Error stack:', dbError.stack);
+      
+      // Provide specific error messages based on the error type
+      if (dbError.message && dbError.message.includes('UNIQUE constraint failed')) {
+        return errorResponse('A variable with this name already exists (constraint violation)', 400);
+      } else if (dbError.message && dbError.message.includes('no such table')) {
+        return errorResponse('Variables table does not exist in the database', 500);
+      } else if (dbError.message && dbError.message.includes('syntax error')) {
+        return errorResponse('SQL syntax error when inserting variable', 500);
+      }
+      
+      return errorResponse('Failed to insert variable into database', 500);
+    }
 
+    console.log(`[POST /api/variables] Retrieving newly created variable`);
     // Get the newly created variable
+    const startRetrieveTime = performance.now();
     const newVariable = await env.DB.prepare(
       'SELECT * FROM Variables WHERE id = last_insert_rowid()'
     ).first();
+    const retrieveQueryTime = performance.now() - startRetrieveTime;
+    console.log(`[POST /api/variables] Retrieval completed in ${retrieveQueryTime.toFixed(2)}ms`);
 
+    if (!newVariable) {
+      console.error('[POST /api/variables] Variable was inserted but could not be retrieved');
+      return errorResponse('Variable was created but could not be retrieved', 500);
+    }
+
+    console.log(`[POST /api/variables] Successfully created variable with ID: ${newVariable.id}`);
     return jsonResponse(newVariable, 201);
   } catch (error) {
-    console.error('Error creating variable:', error);
-    return errorResponse('Failed to create variable', 500);
+    // Log detailed error information
+    console.error('[POST /api/variables] Error creating variable:', error);
+    console.error('[POST /api/variables] Error stack:', error.stack);
+    
+    // Determine specific error message based on error type
+    let errorMessage = 'Failed to create variable';
+    let statusCode = 500;
+    
+    if (error.message && error.message.includes('no such table')) {
+      errorMessage = 'Variables table does not exist in the database';
+      console.error(`[POST /api/variables] Database error: ${errorMessage}`);
+    } else if (error.message && error.message.includes('syntax error')) {
+      errorMessage = 'SQL syntax error when creating variable';
+      console.error(`[POST /api/variables] SQL error: ${errorMessage}`);
+    } else if (error.message && error.message.includes('UNIQUE constraint')) {
+      errorMessage = 'A variable with this name already exists';
+      statusCode = 400;
+      console.error(`[POST /api/variables] Constraint error: ${errorMessage}`);
+    }
+    
+    return errorResponse(errorMessage, statusCode);
   }
 })
 
