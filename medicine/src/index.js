@@ -1231,6 +1231,186 @@ router.delete('/api/bookings/:id', async (request, env, ctx) => {
   }
 })
 
+// --- VARIABLE ROUTES ---
+
+// Get all variables
+router.get('/api/variables', async (request, env, ctx) => {
+  try {
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM Variables ORDER BY name'
+    ).all();
+    
+    return jsonResponse({ variables: results })
+  } catch (error) {
+    console.error('Error fetching variables:', error);
+    return errorResponse('Failed to fetch variables', 500);
+  }
+})
+
+// Get a specific variable by ID
+router.get('/api/variables/:id', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+    
+    const variable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE id = ?'
+    ).bind(id).first();
+    
+    if (!variable) {
+      return errorResponse('Variable not found', 404);
+    }
+
+    return jsonResponse(variable);
+  } catch (error) {
+    console.error('Error fetching variable:', error);
+    return errorResponse('Failed to fetch variable details', 500);
+  }
+})
+
+// Create a new variable
+router.post('/api/variables', async (request, env, ctx) => {
+  try {
+    // Parse JSON request body
+    let data;
+    try {
+      data = await request.json();
+    } catch (error) {
+      return errorResponse('Invalid JSON in request body', 400);
+    }
+
+    // Validate required fields
+    const requiredFields = ['name', 'value'];
+    const missingFields = validateRequiredFields(data, requiredFields);
+    if (missingFields) {
+      return errorResponse(missingFields, 400);
+    }
+
+    // Check if variable with same name already exists
+    const existingVariable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE name = ?'
+    ).bind(data.name).first();
+
+    if (existingVariable) {
+      return errorResponse('A variable with this name already exists', 400);
+    }
+
+    // Insert new variable
+    await env.DB.prepare(
+      'INSERT INTO Variables (name, value, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+    ).bind(
+      data.name,
+      data.value
+    ).run();
+
+    // Get the newly created variable
+    const newVariable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE id = last_insert_rowid()'
+    ).first();
+
+    return jsonResponse(newVariable, 201);
+  } catch (error) {
+    console.error('Error creating variable:', error);
+    return errorResponse('Failed to create variable', 500);
+  }
+})
+
+// Update a variable
+router.put('/api/variables/:id', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+    
+    // Parse JSON request body
+    let data;
+    try {
+      data = await request.json();
+    } catch (error) {
+      return errorResponse('Invalid JSON in request body', 400);
+    }
+
+    // Check if variable exists
+    const existingVariable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE id = ?'
+    ).bind(id).first();
+
+    if (!existingVariable) {
+      return errorResponse('Variable not found', 404);
+    }
+
+    // If name is being changed, check if it's already taken
+    if (data.name && data.name !== existingVariable.name) {
+      const nameExists = await env.DB.prepare(
+        'SELECT * FROM Variables WHERE name = ? AND id != ?'
+      ).bind(data.name, id).first();
+
+      if (nameExists) {
+        return errorResponse('This variable name is already in use', 400);
+      }
+    }
+
+    // Build update query dynamically based on provided fields
+    const updateFields = [];
+    const params = [];
+
+    const allowedFields = ['name', 'value'];
+
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        updateFields.push(`${field} = ?`);
+        params.push(data[field]);
+      }
+    }
+
+    if (updateFields.length === 0) {
+      return errorResponse('No valid fields to update', 400);
+    }
+
+    // Add updated_at timestamp
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+
+    // Add ID as the last parameter
+    params.push(id);
+
+    // Execute update
+    await env.DB.prepare(
+      `UPDATE Variables SET ${updateFields.join(', ')} WHERE id = ?`
+    ).bind(...params).run();
+
+    // Fetch updated variable
+    const updatedVariable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE id = ?'
+    ).bind(id).first();
+
+    return jsonResponse(updatedVariable);
+  } catch (error) {
+    console.error('Error updating variable:', error);
+    return errorResponse('Failed to update variable', 500);
+  }
+})
+
+// Delete a variable
+router.delete('/api/variables/:id', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+
+    // Check if variable exists
+    const existingVariable = await env.DB.prepare(
+      'SELECT * FROM Variables WHERE id = ?'
+    ).bind(id).first();
+
+    if (!existingVariable) {
+      return errorResponse('Variable not found', 404);
+    }
+
+    // Delete variable
+    await env.DB.prepare('DELETE FROM Variables WHERE id = ?').bind(id).run();
+
+    return jsonResponse({ success: true, message: 'Variable deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting variable:', error);
+    return errorResponse('Failed to delete variable', 500);
+  }
+})
+
 // Stripe webhook endpoint
 router.post('/api/webhooks/stripe', async (request, env, ctx) => {
   try {
