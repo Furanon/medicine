@@ -13,22 +13,47 @@ This project is a Cloudflare Workers-based platform for managing medical courses
 ## Project Structure
 ```
 medicine/
-├── src/
-│   ├── index.js                 # Main application entry point
-│   ├── stripe.js                # Stripe payment integration
+├── src/                          # Backend source code
+│   ├── index.js                  # Main application entry point
+│   ├── stripe.js                 # Stripe payment integration
 │   ├── services/
-│   │   └── imageService.js      # Image processing service
+│   │   └── imageService.js       # Image processing service
 │   └── routes/
-│       └── images.js            # Image-related route handlers
-├── migrations/
+│       └── images.js             # Image-related route handlers
+├── client/                       # Frontend React application
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── calendar/         # Calendar-related components
+│   │   │   │   ├── CalendarView.jsx
+│   │   │   │   ├── EventForm.jsx
+│   │   │   │   └── FilterBar.jsx
+│   │   │   └── common/          # Shared components
+│   │   │       ├── Layout.jsx
+│   │   │       └── Loading.jsx
+│   │   ├── pages/
+│   │   │   └── Calendar.jsx     # Calendar page component
+│   │   ├── services/
+│   │   │   └── api.js          # API client service
+│   │   ├── utils/
+│   │   │   └── dateHelpers.js  # Date manipulation utilities
+│   │   ├── App.jsx             # Root React component
+│   │   └── main.jsx            # Frontend entry point
+│   ├── vite.config.js          # Vite configuration
+│   └── package.json            # Frontend dependencies
+├── test/                        # Test files and assets
+│   ├── images/                  # Test image assets
+│   ├── videos/                  # Test video assets
+│   ├── index.spec.js           # Test specifications
+│   └── upload-test.js          # Upload testing utilities
+├── migrations/                  # Database migrations
 │   ├── 0001_initial.sql        # Initial schema
 │   ├── 0002_stripe.sql         # Payment related tables
 │   └── 0003_create_images.sql  # Image metadata table
 ├── public/                      # Static assets
 ├── wrangler.jsonc              # Cloudflare Workers configuration
-└── package.json
+├── vitest.config.js            # Vitest configuration
+└── package.json                # Backend dependencies
 ```
-
 ## Project Structure Details
 
 The frontend application can be found in the "client" directory.
