@@ -29,6 +29,24 @@ medicine/
 └── package.json
 ```
 
+## Project Structure Details
+
+The frontend application can be found in the "client" directory.
+
+### Backend Core Files
+- src/index.js - Main application entry point
+- src/stripe.js - Payment processing
+- src/services/imageService.js - Image handling
+- src/routes/images.js - Image routes
+- migrations/*.sql - Database schema
+
+### Frontend Core Files
+- client/src/main.jsx - Frontend entry point
+- client/src/App.jsx - Root component
+- client/src/services/api.js - API client
+- client/src/components/calendar/* - Calendar components
+- client/src/pages/Calendar.jsx - Calendar page
+
 ## Implementation Progress
 
 ### Completed Features
