@@ -96,6 +96,95 @@ POST /image/associate
 - Associate images with courses/sessions
 ```
 
+### Image Upload System
+```
+POST /upload
+- Uploads original images to R2 storage
+- Dynamically creates Cloudflare Image Resizing URLs
+- Returns variant URLs for frontend display
+- Associates images with courses via courseId parameter
+```
+
+#### Implementation Details
+
+1. **Dynamic URL Construction**
+   - Uses request object instead of `self.location.href`
+   - Hostname extraction: `new URL(request.url).hostname`
+   - URL pattern: `https://{hostname}/cdn-cgi/image/w={width},h={height},fit=crop,quality=80,format=webp/{objectKey}`
+   - Supports both local development and production environments
+
+2. **Database Structure**
+   - Images are stored in the `images` table in D1
+   - Schema:
+     ```sql
+     CREATE TABLE images (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         original_filename TEXT NOT NULL,
+         r2_key TEXT NOT NULL,
+         width INTEGER,
+         height INTEGER,
+         file_size INTEGER,
+         format TEXT,
+         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+         related_course_id INTEGER,
+         related_session_id INTEGER,
+         FOREIGN KEY (related_course_id) REFERENCES Courses(course_id),
+         FOREIGN KEY (related_session_id) REFERENCES sessions(id)
+     );
+     ```
+   - Foreign key relationships to `Courses` and `sessions` tables
+
+3. **Frontend Integration Points**
+   - Upload Endpoint: `POST /upload` with multipart/form-data
+   - Required parameters: `image` (file) and `courseId` (integer)
+   - Response format:
+     ```json
+     {
+       "variants": [
+         {
+           "size": "large",
+           "url": "https://example.com/cdn-cgi/image/w=1200,h=800,fit=crop,quality=80,format=webp/images/...",
+           "width": 1200,
+           "height": 800
+         },
+         {
+           "size": "medium",
+           "url": "https://example.com/cdn-cgi/image/w=800,h=600,fit=crop,quality=80,format=webp/images/...",
+           "width": 800,
+           "height": 600
+         },
+         {
+           "size": "thumbnail",
+           "url": "https://example.com/cdn-cgi/image/w=300,h=200,fit=crop,quality=80,format=webp/images/...",
+           "width": 300,
+           "height": 200
+         }
+       ]
+     }
+     ```
+   - Metadata Endpoint: `GET /image/metadata/{id}` returns full image details
+
+4. **Key Files**
+   - `src/services/imageService.js`: Core image handling service
+   - `src/routes/images.js`: Route handlers for image operations
+   - `migrations/0003_create_images.sql`: Database schema for images
+
+5. **Development vs Production Considerations**
+   - Local development (localhost:8787):
+     - Images served through Cloudflare's Image Resizing API emulation
+     - R2 is simulated locally by Miniflare
+     - URLs use localhost hostname with port
+   - Production:
+     - Full Cloudflare Image Resizing capabilities
+     - R2 bucket accessed directly through Cloudflare infrastructure
+     - URLs use your custom domain
+   - Consistency: Same URL format and parameters work in both environments
+
+6. **Required Cloudflare Configuration**
+   - Enable Image Resizing on your Cloudflare account
+   - Configure R2 bucket permissions correctly
+   - Ensure Workers have necessary bindings to R2 and D1
+
 ## Environment Configuration
 
 Required environment variables:
