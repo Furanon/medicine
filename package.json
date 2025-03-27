@@ -1,0 +1,31 @@
+{
+	"name": "medicine",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"test": "vitest"
+	},
+	"dependencies": {
+		"@emotion/react": "^11.14.0",
+		"@emotion/styled": "^11.14.0",
+		"@mui/material": "^7.0.0",
+		"@sendgrid/mail": "^7.x",
+		"axios": "^1.8.4",
+		"date-fns": "^4.1.0",
+		"itty-router": "^4.x",
+		"latest": "^0.2.0",
+		"react-big-calendar": "^1.18.0",
+		"react-router-dom": "^7.4.0",
+		"stripe": "^14.x"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.7.5",
+		"form-data": "^4.0.2",
+		"node-fetch": "^3.3.2",
+		"vitest": "~3.0.7",
+		"wrangler": "^4.5.0"
+	}
+}
