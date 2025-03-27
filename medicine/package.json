@@ -1,0 +1,24 @@
+{
+	"name": "medicine",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"test": "vitest"
+	},
+	"dependencies": {
+		"@sendgrid/mail": "^7.x",
+		"itty-router": "^4.x",
+		"latest": "^0.2.0",
+		"stripe": "^14.x"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.7.5",
+		"form-data": "^4.0.2",
+		"node-fetch": "^3.3.2",
+		"vitest": "~3.0.7",
+		"wrangler": "^4.5.0"
+	}
+}
