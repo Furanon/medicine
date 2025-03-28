@@ -6,7 +6,9 @@
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
-		"test": "vitest"
+		"test": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"test:watch:coverage": "vitest --coverage"
 	},
 	"dependencies": {
 		"@emotion/react": "^11.14.0",
@@ -23,6 +25,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.7.5",
+		"@vitest/coverage-v8": "^3.0.9",
 		"form-data": "^4.0.2",
 		"node-fetch": "^3.3.2",
 		"vitest": "~3.0.7",

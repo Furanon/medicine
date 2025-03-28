@@ -7,14 +7,31 @@
  *
  */
 
+/**
+ * ====================
+ * IMPORTS AND DEPENDENCIES
+ * ====================
+ */
 const { initStripe, processPayment, handleStripeWebhook } = require('./stripe');
 import { handleImageRoutes } from './routes/images';
-import { eventsRouter } from './routes/events';
+
+/**
+ * ====================
+ * CONSTANTS AND CONFIGURATIONS
+ * ====================
+ */
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
+
+/**
+ * ====================
+ * UTILITY FUNCTIONS
+ * ====================
+ */
+
 // Helper function to create JSON response
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -36,6 +53,81 @@ function validateRequiredFields(data, fields) {
   }
   return null;
 }
+
+// Get Stripe instance for payments
+function getStripeInstance(env) {
+  return initStripe(env.STRIPE_PUBLISHABLE_KEY);
+}
+
+// Helper function to validate recurrence rule
+function validateRecurrenceRule(rule) {
+  try {
+    if (!rule) return 'Invalid recurrence rule: rule is required';
+    const validFrequencies = ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'];
+    const parts = rule.split(';').reduce((acc, part) => {
+      const [key, value] = part.split('=');
+      acc[key] = value;
+      return acc;
+    }, {});
+    
+    if (!parts.FREQ || !validFrequencies.includes(parts.FREQ)) {
+      return 'Invalid recurrence rule: FREQ must be one of DAILY, WEEKLY, MONTHLY, YEARLY';
+    }
+    return null;
+  } catch (error) {
+    return 'Invalid recurrence rule format';
+  }
+}
+
+// Helper function to generate recurring event instances
+function generateInstances(event) {
+  const { recurrence_rule, start_time, end_time } = event;
+  const instances = [];
+  const startDate = new Date(start_time);
+  const endDate = new Date(end_time);
+  const duration = endDate - startDate;
+
+  const [, freq, countStr] = recurrence_rule.match(/^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;COUNT=(\d+))?$/);
+  const count = parseInt(countStr) || 1;
+
+  for (let i = 0; i < count; i++) {
+    const instanceDate = new Date(startDate);
+    switch (freq) {
+      case 'DAILY':
+        instanceDate.setDate(instanceDate.getDate() + i);
+        break;
+      case 'WEEKLY':
+        instanceDate.setDate(instanceDate.getDate() + (i * 7));
+        break;
+      case 'MONTHLY':
+        instanceDate.setMonth(instanceDate.getMonth() + i);
+        break;
+      case 'YEARLY':
+        instanceDate.setFullYear(instanceDate.getFullYear() + i);
+        break;
+    }
+
+    const instanceEndDate = new Date(instanceDate.getTime() + duration);
+
+    instances.push({
+      id: `${event.id}_${i}`,
+      title: event.title,
+      description: event.description,
+      startTime: instanceDate.toISOString(),
+      endTime: instanceEndDate.toISOString(),
+      venueId: event.venue_id,
+      recurringEventId: event.id
+    });
+  }
+
+  return instances;
+}
+
+/**
+ * ====================
+ * ROUTER CLASS DEFINITION
+ * ====================
+ */
 
 // Router class to handle different HTTP methods for the same path
 class Router {
@@ -118,15 +210,133 @@ class Router {
   }
 }
 
+/**
+ * ====================
+ * ROUTER INITIALIZATION
+ * ====================
+ */
+
 // Create and configure the router
 const router = new Router();
 
-// Helper function to get Stripe instance with environment variables
-function getStripeInstance(env) {
-  return initStripe(env.STRIPE_SECRET_KEY);
-}
+/**
+ * ====================
+ * BASIC ROUTES
+ * ====================
+ */
 
-// --- COURSE ROUTES ---
+// Simple hello world route
+router.get('/message', () => {
+  return new Response('Hello, World!', {
+    headers: { 'Content-Type': 'text/plain' }
+  });
+});
+
+router.get('/random', () => {
+  const uuid = crypto.randomUUID();
+  return new Response(uuid, {
+    headers: { 'Content-Type': 'text/plain' }
+  });
+});
+
+/**
+ * ====================
+ * EVENT ROUTES
+ * ====================
+ */
+
+// Create a recurring event
+router.post('/api/events', async (request, env, ctx) => {
+  try {
+    const data = await request.json();
+    
+    // Validate required fields
+    const requiredFields = ['title', 'startTime', 'endTime', 'recurrenceRule'];
+    const missingFields = validateRequiredFields(data, requiredFields);
+    if (missingFields) {
+      return errorResponse(missingFields, 400);
+    }
+
+    // Validate recurrence rule
+    const ruleError = validateRecurrenceRule(data.recurrenceRule);
+    if (ruleError) {
+      return errorResponse(ruleError, 400);
+    }
+
+    // Insert new event
+    const result = await env.DB.prepare(`
+      INSERT INTO Recurring_Events (
+        title, description, start_time, end_time, recurrence_rule, 
+        venue_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(
+      data.title,
+      data.description || null,
+      data.startTime,
+      data.endTime,
+      data.recurrenceRule,
+      data.venueId || null
+    ).run();
+
+    // Get the newly created event
+    const newEvent = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = last_insert_rowid()'
+    ).first();
+
+    return jsonResponse({
+      id: newEvent.id,
+      title: newEvent.title,
+      description: newEvent.description,
+      startTime: newEvent.start_time,
+      endTime: newEvent.end_time,
+      recurrenceRule: newEvent.recurrence_rule,
+      venueId: newEvent.venue_id
+    }, 200);
+  } catch (error) {
+    console.error('Error creating recurring event:', error);
+    return errorResponse('Failed to create recurring event', 500);
+  }
+});
+
+// Get recurring event instances
+router.get('/api/events/:id/instances', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+
+    const event = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = ?'
+    ).bind(id).first();
+
+    if (!event) {
+      return errorResponse('Recurring event not found', 404);
+    }
+
+    // Get exceptions
+    const { results: exceptions } = await env.DB.prepare(
+      'SELECT instance_date FROM Event_Exceptions WHERE recurring_event_id = ?'
+    ).bind(id).all();
+
+    // Generate instances and filter out exceptions
+    const instances = generateInstances(event).filter(instance => {
+      const instanceDate = instance.startTime.split('T')[0];
+      return !exceptions.some(ex => ex.instance_date === instanceDate);
+    });
+
+    return jsonResponse({ data: instances }, 200);
+  } catch (error) {
+    console.error('Error fetching event instances:', error);
+    return errorResponse('Failed to fetch event instances', 500);
+  }
+});
+
+// Note: Delete functionality for events has been moved to the more comprehensive 
+// implementation at '/api/events/:id' which supports multiple delete scopes
+
+/**
+ * ====================
+ * COURSE ROUTES
+ * ====================
+ */
 
 // Get all courses
 router.get('/api/courses', async (request, env, ctx) => {
@@ -335,7 +545,11 @@ router.delete('/api/courses/:id', async (request, env, ctx) => {
   }
 })
 
-// --- SESSION ROUTES ---
+/**
+ * ====================
+ * SESSION ROUTES
+ * ====================
+ */
 
 // Get all sessions
 router.get('/api/sessions', async (request, env, ctx) => {
@@ -640,7 +854,11 @@ router.delete('/api/sessions/:id', async (request, env, ctx) => {
   }
 })
 
-// --- USER ROUTES ---
+/**
+ * ====================
+ * USER ROUTES
+ * ====================
+ */
 
 // Get all users
 router.get('/api/users', async (request, env, ctx) => {
@@ -885,7 +1103,12 @@ router.delete('/api/users/:id', async (request, env, ctx) => {
     return errorResponse('Failed to delete user', 500);
   }
 })
-// --- BOOKING ROUTES ---
+
+/**
+ * ====================
+ * BOOKING ROUTES
+ * ====================
+ */
 
 // Get all bookings
 router.get('/api/bookings', async (request, env, ctx) => {
@@ -1231,7 +1454,230 @@ router.delete('/api/bookings/:id', async (request, env, ctx) => {
   }
 })
 
-// --- VARIABLE ROUTES ---
+/**
+ * ====================
+ * RECURRING EVENTS ROUTES
+ * ====================
+ */
+
+// The validateRecurrenceRule function has been moved to the top of the file
+
+// Create a recurring event
+router.post('/api/events', async (request, env, ctx) => {
+  try {
+    const data = await request.json();
+    
+    // Validate required fields
+    const requiredFields = ['title', 'startTime', 'endTime', 'recurrenceRule'];
+    const missingFields = validateRequiredFields(data, requiredFields);
+    if (missingFields) {
+      return errorResponse(missingFields, 400);
+    }
+
+    // Validate recurrence rule
+    const ruleError = validateRecurrenceRule(data.recurrenceRule);
+    if (ruleError) {
+      return errorResponse(ruleError, 400);
+    }
+
+    // Insert into database
+    const result = await env.DB.prepare(`
+      INSERT INTO Recurring_Events (
+        title, description, start_time, end_time, recurrence_rule, 
+        venue_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(
+      data.title,
+      data.description || null,
+      data.startTime,
+      data.endTime,
+      data.recurrenceRule,
+      data.venueId || null
+    ).run();
+
+    // Get the newly created event
+    const newEvent = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = last_insert_rowid()'
+    ).first();
+
+    // Format response to match test expectations
+    return jsonResponse({
+      id: newEvent.id,
+      title: newEvent.title,
+      description: newEvent.description,
+      startTime: newEvent.start_time,
+      endTime: newEvent.end_time,
+      recurrenceRule: newEvent.recurrence_rule,
+      venueId: newEvent.venue_id
+    }, 200);
+  } catch (error) {
+    console.error('Error creating recurring event:', error);
+    return errorResponse('Failed to create recurring event', 500);
+  }
+});
+
+// Get recurring event instances
+router.get('/api/events/:id/instances', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+
+    const event = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = ?'
+    ).bind(id).first();
+
+    if (!event) {
+      return errorResponse('Recurring event not found', 404);
+    }
+
+    // Calculate instances based on recurrence rule
+    const instances = generateEventInstances(event);
+
+    // Get exceptions
+    const { results: exceptions } = await env.DB.prepare(
+      'SELECT * FROM Event_Exceptions WHERE recurring_event_id = ?'
+    ).bind(id).all();
+
+    // Filter out exceptions
+    const filteredInstances = instances.filter(instance => 
+      !exceptions.some(ex => ex.exception_date === instance.startTime.split('T')[0])
+    );
+
+    return jsonResponse({ 
+      data: filteredInstances
+    }, 200);
+  } catch (error) {
+    console.error('Error fetching event instances:', error);
+    return errorResponse('Failed to fetch event instances', 500);
+  }
+});
+
+// Update recurring event
+router.put('/api/events/:id', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+    const data = await request.json();
+
+    const event = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = ?'
+    ).bind(id).first();
+
+    if (!event) {
+      return errorResponse('Recurring event not found', 404);
+    }
+
+    if (data.recurrenceRule) {
+      const ruleError = validateRecurrenceRule(data.recurrenceRule);
+      if (ruleError) {
+        return errorResponse(ruleError, 400);
+      }
+    }
+
+    await env.DB.prepare(`
+      UPDATE Recurring_Events 
+      SET title = ?, description = ?, start_time = ?, end_time = ?, 
+          recurrence_rule = ?, venue_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      data.title,
+      data.description,
+      data.startTime,
+      data.endTime,
+      data.recurrenceRule,
+      data.venueId,
+      id
+    ).run();
+
+    const updatedEvent = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = ?'
+    ).bind(id).first();
+
+    return jsonResponse({
+      id: updatedEvent.id,
+      title: updatedEvent.title,
+      description: updatedEvent.description,
+      startTime: updatedEvent.start_time,
+      endTime: updatedEvent.end_time,
+      recurrenceRule: updatedEvent.recurrence_rule,
+      venueId: updatedEvent.venue_id,
+      success: true,
+      message: 'Recurring event updated successfully'
+    }, 200);
+  } catch (error) {
+    console.error('Error updating recurring event:', error);
+    return errorResponse('Failed to update recurring event', 500);
+  }
+});
+
+// Delete a recurring event
+router.delete('/api/events/:id', async (request, env, ctx) => {
+  try {
+    const { id } = request.params;
+    const url = new URL(request.url);
+    const deleteScope = url.searchParams.get('deleteScope') || 'all';
+
+    const existingEvent = await env.DB.prepare(
+      'SELECT * FROM Recurring_Events WHERE id = ?'
+    ).bind(id).first();
+
+    if (!existingEvent) {
+      return errorResponse('Recurring event not found', 404);
+    }
+
+    if (deleteScope === 'all') {
+      await env.DB.prepare(
+        'DELETE FROM Recurring_Events WHERE id = ?'
+      ).bind(id).run();
+    } else if (deleteScope === 'this') {
+      const instanceDate = url.searchParams.get('instanceDate');
+      if (!instanceDate) {
+        return errorResponse('instanceDate is required for deleting a single instance', 400);
+      }
+
+      await env.DB.prepare(
+        'INSERT INTO Event_Exceptions (recurring_event_id, exception_date) VALUES (?, ?)'
+      ).bind(id, instanceDate).run();
+    } else if (deleteScope === 'thisAndFuture') {
+      const fromDate = url.searchParams.get('fromDate');
+      if (!fromDate) {
+        return errorResponse('fromDate is required for deleting future instances', 400);
+      }
+
+      await env.DB.prepare(
+        'UPDATE Recurring_Events SET end_date = date(?, "-1 day") WHERE id = ?'
+      ).bind(fromDate, id).run();
+    } else {
+      return errorResponse('Invalid deleteScope. Must be "all", "this", or "thisAndFuture"', 400);
+    }
+
+    return jsonResponse({ 
+      success: true, 
+      message: 'Recurring event deleted successfully',
+      deleteScope 
+    });
+  } catch (error) {
+    console.error('Error deleting recurring event:', error);
+    return errorResponse('Failed to delete recurring event', 500);
+  }
+});
+
+/**
+ * ====================
+ * VARIABLE MANAGEMENT
+ * ====================
+ */
+
+// Helper function to validate variable name
+function validateVariableName(name) {
+  if (name.length > 100) {
+    return 'Variable name length exceeds maximum of 100 characters';
+  }
+  if (!/^[a-zA-Z0-9_\- ]+$/.test(name)) {
+    return 'Invalid variable name format. Use only letters, numbers, spaces, hyphens and underscores';
+  }
+  return null;
+}
+
+// Variable Routes
 
 // Get all variables
 router.get('/api/variables', async (request, env, ctx) => {
@@ -1255,9 +1701,10 @@ router.get('/api/variables', async (request, env, ctx) => {
     // Check for empty results (not an error but worth logging)
     if (!results || results.length === 0) {
       console.log('[GET /api/variables] No variables found in database');
+      return jsonResponse({ data: [] });
     }
     
-    return jsonResponse({ variables: results })
+    return jsonResponse({ data: results })
   } catch (error) {
     // Log detailed error information
     console.error('[GET /api/variables] Error fetching variables:', error);
@@ -1320,6 +1767,12 @@ router.post('/api/variables', async (request, env, ctx) => {
       console.error(`[POST /api/variables] Validation failed: ${missingFields}`);
       return errorResponse(missingFields, 400);
     }
+
+    // Validate variable name
+    const nameError = validateVariableName(data.name);
+    if (nameError) {
+      return errorResponse(nameError, 400);
+    }
     
     console.log(`[POST /api/variables] Input validation passed for variable: ${data.name}`);
 
@@ -1340,7 +1793,7 @@ router.post('/api/variables', async (request, env, ctx) => {
 
     if (existingVariable) {
       console.error(`[POST /api/variables] Variable with name '${data.name}' already exists`);
-      return errorResponse('A variable with this name already exists', 400);
+      return errorResponse('A variable with this name already exists', 409);
     }
 
     console.log(`[POST /api/variables] Preparing to insert new variable: ${data.name}`);
@@ -1385,8 +1838,8 @@ router.post('/api/variables', async (request, env, ctx) => {
       return errorResponse('Variable was created but could not be retrieved', 500);
     }
 
-    console.log(`[POST /api/variables] Successfully created variable with ID: ${newVariable.id}`);
-    return jsonResponse(newVariable, 201);
+    console.log(`[POST /api/variables] Successfully created variable with ID: ${newVariable.id}`)
+    return jsonResponse(newVariable, 200);
   } catch (error) {
     // Log detailed error information
     console.error('[POST /api/variables] Error creating variable:', error);
@@ -1425,6 +1878,18 @@ router.put('/api/variables/:id', async (request, env, ctx) => {
       return errorResponse('Invalid JSON in request body', 400);
     }
 
+    if (!data.name && !data.value) {
+      return errorResponse('No valid fields to update', 400);
+    }
+
+    // Validate variable name if provided
+    if (data.name) {
+      const nameError = validateVariableName(data.name);
+      if (nameError) {
+        return errorResponse(nameError, 400);
+      }
+    }
+
     // Check if variable exists
     const existingVariable = await env.DB.prepare(
       'SELECT * FROM Variables WHERE id = ?'
@@ -1441,7 +1906,7 @@ router.put('/api/variables/:id', async (request, env, ctx) => {
       ).bind(data.name, id).first();
 
       if (nameExists) {
-        return errorResponse('This variable name is already in use', 400);
+        return errorResponse('This variable name is already in use', 409);
       }
     }
 
@@ -1509,6 +1974,12 @@ router.delete('/api/variables/:id', async (request, env, ctx) => {
   }
 })
 
+/**
+ * ====================
+ * PAYMENT ROUTES
+ * ====================
+ */
+
 // Stripe webhook endpoint
 router.post('/api/webhooks/stripe', async (request, env, ctx) => {
   try {
@@ -1519,6 +1990,12 @@ router.post('/api/webhooks/stripe', async (request, env, ctx) => {
     return errorResponse('Webhook processing failed', 500);
   }
 });
+
+/**
+ * ====================
+ * WORKER EXPORT
+ * ====================
+ */
 
 // Export the fetch handler for the Worker
 
@@ -1549,22 +2026,7 @@ export default {
         });
       }
 
-      // Try handling events routes first
-      const url = new URL(request.url);
-      if (url.pathname.startsWith('/api/events')) {
-        const response = await eventsRouter.handle(request, env, ctx);
-        // Add CORS headers to the response
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: {
-            ...Object.fromEntries(response.headers),
-            ...corsHeaders,
-          },
-        });
-      }
-
-      // Handle the request with our main router
+      // Handle the request with our router
       const response = await router.handle(request, env, ctx);
       
       // Add CORS headers to the response (using the globally defined corsHeaders)

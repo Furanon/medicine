@@ -1,0 +1,81 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests with coverage
+        run: npm test -- --coverage
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: true
+      
+      - name: Check coverage thresholds
+        run: |
+          COVERAGE_RESULT=$(npm test -- --coverage --json | jq -r '.coverage')
+          
+          STATEMENTS=$(echo $COVERAGE_RESULT | jq -r '.statements.pct')
+          BRANCHES=$(echo $COVERAGE_RESULT | jq -r '.branches.pct')
+          FUNCTIONS=$(echo $COVERAGE_RESULT | jq -r '.functions.pct')
+          LINES=$(echo $COVERAGE_RESULT | jq -r '.lines.pct')
+          
+          THRESHOLD=80
+          
+          if (( $(echo "$STATEMENTS < $THRESHOLD" | bc -l) )) || \
+             (( $(echo "$BRANCHES < $THRESHOLD" | bc -l) )) || \
+             (( $(echo "$FUNCTIONS < $THRESHOLD" | bc -l) )) || \
+             (( $(echo "$LINES < $THRESHOLD" | bc -l) )); then
+            echo "Coverage is below threshold of $THRESHOLD%:"
+            echo "Statements: $STATEMENTS%"
+            echo "Branches: $BRANCHES%"
+            echo "Functions: $FUNCTIONS%"
+            echo "Lines: $LINES%"
+            exit 1
+          else
+            echo "Coverage is above threshold of $THRESHOLD%:"
+            echo "Statements: $STATEMENTS%"
+            echo "Branches: $BRANCHES%"
+            echo "Functions: $FUNCTIONS%"
+            echo "Lines: $LINES%"
+          fi
+        shell: bash
+      
+      - name: Cache Cloudflare Workers build
+        uses: actions/cache@v3
+        with:
+          path: |
+            .wrangler
+            dist
+          key: ${{ runner.os }}-wrangler-${{ hashFiles('wrangler.toml', 'package-lock.json') }}
+
